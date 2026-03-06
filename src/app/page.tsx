@@ -337,16 +337,21 @@ export default function Home() {
   }, [filtersOpen]);
 
   // ── Infinite scroll sentinel ──────────────────────────────────────────────
+  const loadMoreRef = useRef(loadMore);
+  useEffect(() => { loadMoreRef.current = loadMore; }, [loadMore]);
+
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel) return;
+    const container = listRef.current;
+    if (!sentinel || !container) return;
     const observer = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) loadMore(); },
-      { rootMargin: "200px" }
+      (entries) => { if (entries[0].isIntersecting) loadMoreRef.current(); },
+      { root: container, rootMargin: "120px" }
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loadMore]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount once — loadMore accessed via ref
 
   const handleBoundsChange = useCallback((bounds: MapBounds) => {
     setMapBounds(bounds);
