@@ -104,10 +104,24 @@ function SpaceCard({ space, selected, onHover }: {
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="shrink-0 text-[11px] text-stone-400 hover:text-blue-600 hover:underline"
+            className="shrink-0 text-[11px] font-medium text-blue-500 hover:text-blue-700 hover:underline"
+            title="View property owner, permits, and contact info on Portland Maps"
           >
-            Property info ↗
+            Owner info ↗
           </a>
+        </div>
+        <div className="mt-1.5 flex items-center gap-1 border-t border-stone-100 pt-1.5">
+          <span className="text-[10px] text-stone-300">Source:</span>
+          <a
+            href="https://www.portlandmaps.com/od/index.cfm?action=DataCatalog"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-[10px] text-stone-400 hover:text-stone-600 hover:underline"
+          >
+            Portland Open Data
+          </a>
+          <span className="ml-auto text-[10px] italic text-amber-500">Occupancy unverified</span>
         </div>
       </div>
     </div>
