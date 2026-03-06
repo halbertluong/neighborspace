@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
         where,
         orderBy: [
           { squareFeet: "desc" },
+          { id: "asc" },
         ],
         skip:  (page - 1) * limit,
         take:  limit,

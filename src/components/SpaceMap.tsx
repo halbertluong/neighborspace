@@ -4,8 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  CATEGORY_HEX, CATEGORY_LABEL, getCategoryForUse,
-  getHexForUse, type SpaceTypeCategory,
+  CATEGORY_HEX, CATEGORY_LABEL, getHexForUse, type SpaceTypeCategory,
 } from "@/lib/spaceTypes";
 
 export type SpaceMarker = {
@@ -58,6 +57,19 @@ function MapLegend() {
   );
 }
 
+// ── Marker style helpers ───────────────────────────────────────────────────────
+function markerStyle(previousUse: string | null | undefined, isSelected: boolean) {
+  const baseColor = getHexForUse(previousUse);
+  return {
+    radius:      isSelected ? 9 : 5,
+    fillColor:   isSelected ? "#059669" : baseColor,
+    color:       "rgba(255,255,255,0.9)",
+    weight:      isSelected ? 2.5 : 1.5,
+    fillOpacity: isSelected ? 1 : 0.85,
+    opacity:     1,
+  };
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 const SpaceMap = forwardRef<SpaceMapHandle, {
   spaces: SpaceMarker[];
@@ -72,12 +84,18 @@ const SpaceMap = forwardRef<SpaceMapHandle, {
   onBoundsChange,
   className = "h-80 w-full",
 }, ref) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const containerRef     = useRef<HTMLDivElement>(null);
+  const mapRef           = useRef<L.Map | null>(null);
+  const canvasRef        = useRef<L.Canvas | null>(null);
+  const markersRef       = useRef<Map<string, L.CircleMarker>>(new Map());
+  const prevSelectedRef  = useRef<string | null>(null);
+  const onSelectRef      = useRef(onSelect);
+  const onBoundsChangeRef = useRef(onBoundsChange);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
+  useEffect(() => { onBoundsChangeRef.current = onBoundsChange; }, [onBoundsChange]);
 
   useImperativeHandle(ref, () => ({
     fitToSpaces(spaces) {
@@ -92,11 +110,16 @@ const SpaceMap = forwardRef<SpaceMapHandle, {
     },
   }), []);
 
-  // Init map
+  // ── Init map ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mounted || !containerRef.current || mapRef.current) return;
 
-    const map = L.map(containerRef.current, { zoomControl: false }).setView([45.5731, -122.7068], 13);
+    canvasRef.current = L.canvas({ padding: 0.5 });
+
+    const map = L.map(containerRef.current, {
+      zoomControl: false,
+      preferCanvas: true,
+    }).setView([45.5731, -122.7068], 13);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "© OpenStreetMap",
@@ -118,20 +141,20 @@ const SpaceMap = forwardRef<SpaceMapHandle, {
     setTimeout(reportBounds, 300);
 
     mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; };
+    return () => { map.remove(); mapRef.current = null; canvasRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
-  const onBoundsChangeRef = useRef(onBoundsChange);
-  useEffect(() => { onBoundsChangeRef.current = onBoundsChange; }, [onBoundsChange]);
-
-  // Sync markers
+  // ── Sync markers when spaces list changes ─────────────────────────────────
+  // Only adds/removes markers. Selection styling is handled in the next effect.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    const map    = mapRef.current;
+    const canvas = canvasRef.current;
+    if (!map || !canvas) return;
 
     const currentIds = new Set(spaces.map((s) => s.id));
 
+    // Remove stale markers
     for (const [id, marker] of markersRef.current) {
       if (!currentIds.has(id)) {
         marker.remove();
@@ -139,51 +162,59 @@ const SpaceMap = forwardRef<SpaceMapHandle, {
       }
     }
 
-    spaces.forEach((s) => {
-      const active     = (s.ideaCount ?? 0) > 0 || (s.themeCount ?? 0) > 0;
-      const isSelected = s.id === selectedId;
-      const category   = getCategoryForUse(s.previousUse);
-      const baseColor  = getHexForUse(s.previousUse);
-
-      const size   = isSelected ? 22 : active ? 14 : 12;
-      const bg     = isSelected ? "#059669" : baseColor;
-      const border = isSelected
-        ? "3px solid white"
-        : active ? "2px solid white" : "1.5px solid rgba(255,255,255,0.85)";
-      const shadow = isSelected
-        ? `0 0 0 3px ${baseColor}66, 0 2px 8px rgba(0,0,0,0.35)`
-        : active
-          ? "0 0 0 2px rgba(0,0,0,0.15), 0 1px 4px rgba(0,0,0,0.25)"
-          : "0 1px 3px rgba(0,0,0,0.2)";
-      const opacity = isSelected ? "1" : "0.92";
-
-      const touchSize = 44;
-      const offset    = (touchSize - size) / 2;
-
-      void category; // used for type-checking only; color already extracted
-
-      const icon = L.divIcon({
-        className: "",
-        html: `<span style="position:absolute;top:${offset}px;left:${offset}px;background:${bg};width:${size}px;height:${size}px;border-radius:50%;display:inline-block;border:${border};box-shadow:${shadow};opacity:${opacity};transition:all 0.15s;"></span>`,
-        iconSize:   [touchSize, touchSize],
-        iconAnchor: [touchSize / 2, touchSize / 2],
-      });
-
-      if (markersRef.current.has(s.id)) {
-        markersRef.current.get(s.id)!.setIcon(icon);
-      } else {
-        const useLabel = s.previousUse ? `<span style="font-size:10px;color:#888">${s.previousUse}</span><br>` : "";
-        const marker = L.marker([s.lat, s.lng], { icon })
-          .on("click", () => onSelect(s.id))
+    // Add new markers (always with unselected style — selection effect runs next)
+    for (const s of spaces) {
+      if (!markersRef.current.has(s.id)) {
+        const style = markerStyle(s.previousUse, false);
+        const cm = L.circleMarker([s.lat, s.lng], { renderer: canvas, ...style })
+          .on("click", () => onSelectRef.current(s.id))
           .addTo(map);
-        marker.bindTooltip(
+
+        const useLabel = s.previousUse
+          ? `<span style="font-size:10px;color:#888">${s.previousUse}</span><br>`
+          : "";
+        cm.bindTooltip(
           `<strong style="font-size:12px">${s.name}</strong><br>${useLabel}<span style="font-size:11px;color:#666">${s.address}</span>`,
           { direction: "top", offset: [0, -8] },
         );
-        markersRef.current.set(s.id, marker);
+        markersRef.current.set(s.id, cm);
       }
-    });
-  }, [spaces, selectedId, onSelect]);
+    }
+
+    // Reset so the selection effect re-applies the selected style
+    prevSelectedRef.current = null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaces]);
+
+  // ── Sync selection — only touches 2 markers ───────────────────────────────
+  useEffect(() => {
+    const prev = prevSelectedRef.current;
+    if (prev === (selectedId ?? null)) return;
+
+    // Deselect previous
+    if (prev) {
+      const cm = markersRef.current.get(prev);
+      if (cm) {
+        const space = spaces.find((s) => s.id === prev);
+        const style = markerStyle(space?.previousUse, false);
+        cm.setStyle(style);
+        cm.setRadius(style.radius);
+      }
+    }
+
+    // Select new
+    if (selectedId) {
+      const cm = markersRef.current.get(selectedId);
+      if (cm) {
+        const space = spaces.find((s) => s.id === selectedId);
+        const style = markerStyle(space?.previousUse, true);
+        cm.setStyle(style);
+        cm.setRadius(style.radius);
+      }
+    }
+
+    prevSelectedRef.current = selectedId ?? null;
+  }, [selectedId, spaces]);
 
   if (!mounted) {
     return <div className={`${className} shimmer`} />;
