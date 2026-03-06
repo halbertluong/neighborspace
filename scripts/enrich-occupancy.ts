@@ -104,7 +104,8 @@ async function fetchOsmBusinesses(): Promise<OsmPoint[]> {
 out center;
   `.trim();
 
-  const url = "https://overpass-api.de/api/interpreter";
+  // Use French mirror — more reliable than the main instance
+  const url = "https://overpass.openstreetmap.fr/api/interpreter";
   console.log("Fetching OSM businesses from Overpass API...");
 
   const res = await fetch(url, {
