@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Space {
+  id           String    @id @default(cuid())
+  sourceId     String?   @unique @map("source_id")   // "portland-arcgis:1N1E28DC-1000-B1"
+  name         String
+  address      String
+  neighborhood String    @default("")
+  city         String    @default("Portland, OR")
+  lat          Float
+  lng          Float
+  squareFeet   Int?      @map("square_feet")
+  zoningCode   String?   @map("zoning_code")
+  previousUse  String?   @map("previous_use")
+  imageUrl     String?   @map("image_url")
+  rawAttributes String?  @map("raw_attributes")      // JSON blob for source-specific fields
+  status       String    @default("active")           // active | retired
+  syncedAt     DateTime? @map("synced_at")            // last confirmed present in source
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  ideas   Idea[]
+  themes  Theme[]
+  pledges Pledge[]
+}
+
+model Idea {
+  id               String   @id @default(cuid())
+  spaceId          String   @map("space_id")
+  title            String
+  description      String
+  category         String   // e.g. "Food & Beverage", "Fitness", "Arts & Culture"
+  submitterName    String?  @map("submitter_name")
+  submitterEmail   String?  @map("submitter_email")
+  feasibilityStatus String  @default("pending_review") @map("feasibility_status") // pending_review | feasible | not_feasible
+  rejectionReason  String?  @map("rejection_reason")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  space  Space  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  theme  Theme? @relation(fields: [themeId], references: [id], onDelete: SetNull)
+  themeId String? @map("theme_id")
+}
+
+model Theme {
+  id          String   @id @default(cuid())
+  spaceId     String   @map("space_id")
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  space  Space       @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  ideas  Idea[]
+  votes  ThemeVote[]
+  pledges Pledge[]
+}
+
+model ThemeVote {
+  id        String   @id @default(cuid())
+  themeId   String   @map("theme_id")
+  voterId   String   @map("voter_id") // simple id: email or anonymous id
+  createdAt DateTime @default(now()) @map("created_at")
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@unique([themeId, voterId])
+  @@map("theme_votes")
+}
+
+model Pledge {
+  id          String   @id @default(cuid())
+  themeId     String   @map("theme_id")
+  spaceId     String   @map("space_id")
+  amountCents Int      @map("amount_cents") // pledged gift card value
+  pledgerName String   @map("pledger_name")
+  pledgerEmail String  @map("pledger_email")
+  status      String   @default("pledged") // pledged | completed | cancelled
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  theme Theme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  space Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@map("pledges")
+}
