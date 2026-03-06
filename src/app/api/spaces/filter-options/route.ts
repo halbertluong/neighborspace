@@ -32,6 +32,8 @@ export async function GET() {
       zones:            zoneRows.map((r) => r.zoningCode).filter(Boolean) as string[],
       formerlyOptions:  formerlyRows.map((r) => r.previousUse).filter(Boolean) as string[],
       neighborhoods:    neighborhoodRows.map((r) => r.neighborhood).filter(Boolean) as string[],
+    }, {
+      headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400" },
     });
   } catch (e) {
     console.error(e);

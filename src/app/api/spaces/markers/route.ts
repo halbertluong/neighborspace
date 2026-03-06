@@ -43,7 +43,6 @@ export async function GET(request: NextRequest) {
         name:        true,
         address:     true,
         previousUse: true,
-        _count: { select: { ideas: true, themes: true } },
       },
     });
 
@@ -54,11 +53,11 @@ export async function GET(request: NextRequest) {
       name:        s.name,
       address:     s.address,
       previousUse: s.previousUse,
-      ideaCount:   s._count.ideas,
-      themeCount:  s._count.themes,
     }));
 
-    return NextResponse.json(markers);
+    return NextResponse.json(markers, {
+      headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+    });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "Failed" }, { status: 500 });

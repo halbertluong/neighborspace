@@ -164,9 +164,10 @@ export default function Home() {
     zones: string[]; formerlyOptions: string[]; neighborhoods: string[];
   }>({ zones: [], formerlyOptions: [], neighborhoods: [] });
 
-  const listRef = useRef<HTMLDivElement>(null);
-  const mapRef  = useRef<SpaceMapHandle>(null);
+  const listRef      = useRef<HTMLDivElement>(null);
+  const mapRef       = useRef<SpaceMapHandle>(null);
   const filterPanelRef = useRef<HTMLDivElement>(null);
+  const sentinelRef  = useRef<HTMLDivElement>(null);
   const isInitialMarkersLoad = useRef(true);
 
   // ── Build marker query params ─────────────────────────────────────────────
@@ -320,6 +321,18 @@ export default function Home() {
       document.removeEventListener("touchstart", handle as EventListener);
     };
   }, [filtersOpen]);
+
+  // ── Infinite scroll sentinel ──────────────────────────────────────────────
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadMore(); },
+      { rootMargin: "200px" }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   const handleBoundsChange = useCallback((bounds: MapBounds) => {
     setMapBounds(bounds);
@@ -589,15 +602,11 @@ export default function Home() {
                 </div>
               ))}
 
-              {/* Load more / end state */}
+              {/* Infinite scroll sentinel */}
               {listMeta && listMeta.page < listMeta.pages ? (
-                <button
-                  onClick={loadMore}
-                  disabled={loadingMore}
-                  className="w-full rounded-2xl bg-stone-100 py-3 text-sm font-medium text-stone-600 hover:bg-stone-200 disabled:opacity-50"
-                >
-                  {loadingMore ? "Loading…" : `Load more · ${((listMeta.total ?? 0) - listItems.length).toLocaleString()} remaining`}
-                </button>
+                <div ref={sentinelRef} className="py-4 text-center text-xs text-stone-400">
+                  {loadingMore ? "Loading…" : ""}
+                </div>
               ) : listMeta && listItems.length > 0 ? (
                 <p className="py-4 text-center text-xs text-stone-400">
                   All {(listMeta.total ?? 0).toLocaleString()} spaces loaded
