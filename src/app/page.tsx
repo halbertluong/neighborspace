@@ -21,6 +21,7 @@ type Space = {
   imageUrl: string | null;
   lat: number;
   lng: number;
+  occupancyStatus: string | null;
   _count: { ideas: number; themes: number };
 };
 
@@ -121,7 +122,15 @@ function SpaceCard({ space, selected, onHover }: {
           >
             Portland Open Data
           </a>
-          <span className="ml-auto text-[10px] italic text-amber-500">Occupancy unverified</span>
+          {space.occupancyStatus === "likely_vacant" ? (
+            <span className="ml-auto rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 ring-1 ring-emerald-200">
+              Likely vacant
+            </span>
+          ) : space.occupancyStatus === "occupied" ? (
+            <span className="ml-auto text-[10px] italic text-stone-400">May be occupied</span>
+          ) : (
+            <span className="ml-auto text-[10px] italic text-amber-500">Occupancy unknown</span>
+          )}
         </div>
       </div>
     </div>
@@ -155,6 +164,7 @@ export default function Home() {
   const [filterNeighborhoods, setFilterNeighborhoods] = useState<string[]>([]);
   const [filterSqft, setFilterSqft] = useState("");
   const [excludeOffices, setExcludeOffices] = useState(true);
+  const [onlyVacant, setOnlyVacant] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Map + selection state
@@ -192,8 +202,9 @@ export default function Home() {
     filterNeighborhoods.forEach((n) => p.append("neighborhood", n));
     if (filterSqft)     p.set("sqft", filterSqft);
     if (excludeOffices) p.set("excludeOffices", "1");
+    if (onlyVacant)     p.set("onlyVacant", "1");
     return p.toString();
-  }, [filterZone, filterFormerly, filterNeighborhoods, filterSqft, excludeOffices]);
+  }, [filterZone, filterFormerly, filterNeighborhoods, filterSqft, excludeOffices, onlyVacant]);
 
   // ── Build list query params ───────────────────────────────────────────────
   const listParams = useCallback((page: number) => {
@@ -204,6 +215,7 @@ export default function Home() {
     filterNeighborhoods.forEach((n) => p.append("neighborhood", n));
     if (filterSqft)     p.set("sqft", filterSqft);
     if (excludeOffices) p.set("excludeOffices", "1");
+    if (onlyVacant)     p.set("onlyVacant", "1");
     if (mapBounds) {
       p.set("north", String(mapBounds.north));
       p.set("south", String(mapBounds.south));
@@ -211,7 +223,7 @@ export default function Home() {
       p.set("west",  String(mapBounds.west));
     }
     return p.toString();
-  }, [filterZone, filterFormerly, filterNeighborhoods, filterSqft, excludeOffices, mapBounds]);
+  }, [filterZone, filterFormerly, filterNeighborhoods, filterSqft, excludeOffices, onlyVacant, mapBounds]);
 
   // ── Fetch markers whenever attribute filters change ───────────────────────
   useEffect(() => {
@@ -254,7 +266,7 @@ export default function Home() {
         setListLoading(false);
       })
       .catch(() => setListLoading(false));
-  }, [mapBounds, filterZone, filterFormerly, filterNeighborhoods, filterSqft, excludeOffices]);
+  }, [mapBounds, filterZone, filterFormerly, filterNeighborhoods, filterSqft, excludeOffices, onlyVacant]);
 
   // ── Load more ─────────────────────────────────────────────────────────────
   const loadMore = useCallback(() => {
@@ -299,16 +311,17 @@ export default function Home() {
       .then((data) => {
         if (!data?.id) return;
         setSelectedSpaceDetail({
-          id:           data.id,
-          name:         data.name,
-          address:      data.address,
-          neighborhood: data.neighborhood ?? "",
-          squareFeet:   data.squareFeet   ?? null,
-          zoningCode:   data.zoningCode   ?? null,
-          previousUse:  data.previousUse  ?? null,
-          imageUrl:     data.imageUrl     ?? null,
-          lat:          data.lat,
-          lng:          data.lng,
+          id:              data.id,
+          name:            data.name,
+          address:         data.address,
+          neighborhood:    data.neighborhood     ?? "",
+          squareFeet:      data.squareFeet       ?? null,
+          zoningCode:      data.zoningCode       ?? null,
+          previousUse:     data.previousUse      ?? null,
+          imageUrl:        data.imageUrl         ?? null,
+          lat:             data.lat,
+          lng:             data.lng,
+          occupancyStatus: data.occupancyStatus  ?? null,
           _count: {
             ideas:  (data.ideas  ?? []).length,
             themes: (data.themes ?? []).length,
@@ -359,7 +372,8 @@ export default function Home() {
 
   const activeFilters = [filterZone, filterFormerly, filterSqft].filter(Boolean).length
     + (filterNeighborhoods.length > 0 ? 1 : 0)
-    + (excludeOffices ? 1 : 0);
+    + (excludeOffices ? 1 : 0)
+    + (onlyVacant ? 1 : 0);
 
   const { zones, formerlyOptions, neighborhoods } = filterOptions;
   const displayFormerlyOptions = formerlyOptions.filter((u) => !(excludeOffices && u === "Office"));
@@ -428,6 +442,19 @@ export default function Home() {
           className="absolute top-[48px] left-0 right-0 z-50 border-b border-stone-200 bg-white shadow-xl lg:top-[57px] lg:right-auto lg:w-[400px]"
         >
             <div className="max-h-[55vh] overflow-y-auto overscroll-contain px-4 py-3 space-y-4">
+
+              {/* Only likely vacant toggle */}
+              <button
+                onClick={() => setOnlyVacant((o) => !o)}
+                className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium ring-1 transition-colors ${
+                  onlyVacant ? "bg-emerald-700 text-white ring-emerald-700" : "bg-white text-stone-600 ring-stone-200 hover:ring-stone-400"
+                }`}
+              >
+                <span className="flex items-center gap-2"><span>🏚️</span> Only likely vacant</span>
+                <span className={`h-4 w-7 rounded-full transition-colors ${onlyVacant ? "bg-emerald-300" : "bg-stone-200"}`}>
+                  <span className={`block h-4 w-4 rounded-full bg-white shadow transition-transform ${onlyVacant ? "translate-x-3" : "translate-x-0"}`} />
+                </span>
+              </button>
 
               {/* Exclude offices toggle */}
               <button
@@ -515,7 +542,7 @@ export default function Home() {
                 {activeFilters > 0 && (
                   <button
                     onClick={() => {
-                      setFilterZone(""); setFilterFormerly(""); setFilterNeighborhoods([]); setFilterSqft(""); setExcludeOffices(false);
+                      setFilterZone(""); setFilterFormerly(""); setFilterNeighborhoods([]); setFilterSqft(""); setExcludeOffices(false); setOnlyVacant(false);
                     }}
                     className="text-xs font-medium text-red-500 hover:text-red-600"
                   >

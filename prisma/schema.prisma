@@ -21,8 +21,9 @@ model Space {
   previousUse  String?   @map("previous_use")
   imageUrl     String?   @map("image_url")
   rawAttributes String?  @map("raw_attributes")      // JSON blob for source-specific fields
-  status       String    @default("active")           // active | retired
-  syncedAt     DateTime? @map("synced_at")            // last confirmed present in source
+  status          String    @default("active")           // active | retired
+  occupancyStatus String?   @map("occupancy_status")    // occupied | likely_vacant | null=unknown
+  syncedAt        DateTime? @map("synced_at")            // last confirmed present in source
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 

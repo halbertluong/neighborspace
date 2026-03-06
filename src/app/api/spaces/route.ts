@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
     const neighborhoods  = searchParams.getAll("neighborhood");
     const sqft           = searchParams.get("sqft")           ?? "";
     const excludeOffices = searchParams.get("excludeOffices") === "1";
+    const onlyVacant     = searchParams.get("onlyVacant")     === "1";
 
     // Bounds from map viewport
     const north = parseFloat(searchParams.get("north") ?? "");
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
     if (neighborhoods.length > 0) where.neighborhood = { in: neighborhoods };
     const sqftFilter = sqftRange(sqft);
     if (sqftFilter) where.squareFeet = sqftFilter;
+    if (onlyVacant) where.occupancyStatus = "likely_vacant";
 
     const [total, spaces] = await Promise.all([
       prisma.space.count({ where }),
@@ -60,16 +62,17 @@ export async function GET(request: NextRequest) {
         skip:  (page - 1) * limit,
         take:  limit,
         select: {
-          id:          true,
-          name:        true,
-          address:     true,
-          neighborhood:true,
-          squareFeet:  true,
-          zoningCode:  true,
-          previousUse: true,
-          imageUrl:    true,
-          lat:         true,
-          lng:         true,
+          id:              true,
+          name:            true,
+          address:         true,
+          neighborhood:    true,
+          squareFeet:      true,
+          zoningCode:      true,
+          previousUse:     true,
+          imageUrl:        true,
+          lat:             true,
+          lng:             true,
+          occupancyStatus: true,
           _count: { select: { ideas: true, themes: true } },
         },
       }),

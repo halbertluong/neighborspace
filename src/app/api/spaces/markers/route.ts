@@ -17,11 +17,12 @@ function sqftRange(bucket: string): { gte?: number; lte?: number } | null {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const zone           = searchParams.get("zone")           ?? "";
-    const formerly       = searchParams.get("formerly")       ?? "";
-    const neighborhoods  = searchParams.getAll("neighborhood");
-    const sqft           = searchParams.get("sqft")           ?? "";
-    const excludeOffices = searchParams.get("excludeOffices") === "1";
+    const zone              = searchParams.get("zone")              ?? "";
+    const formerly          = searchParams.get("formerly")          ?? "";
+    const neighborhoods     = searchParams.getAll("neighborhood");
+    const sqft              = searchParams.get("sqft")              ?? "";
+    const excludeOffices    = searchParams.get("excludeOffices")    === "1";
+    const onlyVacant        = searchParams.get("onlyVacant")        === "1";
 
     const where: Record<string, unknown> = { status: "active" };
     if (zone)     where.zoningCode  = zone;
@@ -33,26 +34,29 @@ export async function GET(request: NextRequest) {
     if (neighborhoods.length > 0) where.neighborhood = { in: neighborhoods };
     const sqftFilter = sqftRange(sqft);
     if (sqftFilter) where.squareFeet = sqftFilter;
+    if (onlyVacant) where.occupancyStatus = "likely_vacant";
 
     const spaces = await prisma.space.findMany({
       where,
       select: {
-        id:          true,
-        lat:         true,
-        lng:         true,
-        name:        true,
-        address:     true,
-        previousUse: true,
+        id:              true,
+        lat:             true,
+        lng:             true,
+        name:            true,
+        address:         true,
+        previousUse:     true,
+        occupancyStatus: true,
       },
     });
 
     const markers = spaces.map((s) => ({
-      id:          s.id,
-      lat:         s.lat,
-      lng:         s.lng,
-      name:        s.name,
-      address:     s.address,
-      previousUse: s.previousUse,
+      id:              s.id,
+      lat:             s.lat,
+      lng:             s.lng,
+      name:            s.name,
+      address:         s.address,
+      previousUse:     s.previousUse,
+      occupancyStatus: s.occupancyStatus,
     }));
 
     return NextResponse.json(markers, {

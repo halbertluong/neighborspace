@@ -18,6 +18,8 @@
     "ingest:portland-bulk:dry": "DRY_RUN=1 npx tsx scripts/ingest-portland-bulk.ts",
     "sync:portland": "npx tsx scripts/sync-portland.ts",
     "sync:portland:dry": "DRY_RUN=1 npx tsx scripts/sync-portland.ts",
+    "enrich:occupancy": "npx tsx scripts/enrich-occupancy.ts",
+    "enrich:occupancy:dry": "DRY_RUN=1 npx tsx scripts/enrich-occupancy.ts",
     "test": "npx tsx scripts/test-site.ts",
     "test:prod": "BASE_URL=https://neighborspace.vercel.app npx tsx scripts/test-site.ts",
     "postinstall": "prisma generate"
