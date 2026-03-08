@@ -101,14 +101,14 @@ function SpaceCard({ space, selected, onHover }: {
         <div className="mt-2 flex items-center justify-between gap-2">
           <p className="text-xs font-medium text-emerald-600 group-hover:text-emerald-700">Dream about it →</p>
           <a
-            href={`https://www.portlandmaps.com/#lat=${space.lat}&lon=${space.lng}&zoom=18`}
+            href={`https://www.portlandmaps.com/?search=${encodeURIComponent(space.address)}`}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
             className="shrink-0 text-[11px] font-medium text-blue-500 hover:text-blue-700 hover:underline"
-            title="View property owner, permits, and contact info on Portland Maps"
+            title="Look up property owner, permits, and contact info on Portland Maps"
           >
-            Owner info ↗
+            Contact owner ↗
           </a>
         </div>
         <div className="mt-1.5 flex items-center gap-1 border-t border-stone-100 pt-1.5">
