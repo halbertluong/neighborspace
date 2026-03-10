@@ -73,13 +73,22 @@ export async function GET(request: NextRequest) {
           lat:             true,
           lng:             true,
           occupancyStatus: true,
+          rawAttributes:   true,
           _count: { select: { ideas: true, themes: true } },
         },
       }),
     ]);
 
+    const spacesWithPmId = spaces.map(({ rawAttributes, ...s }) => {
+      let portlandMapsId: string | null = null;
+      try {
+        if (rawAttributes) portlandMapsId = JSON.parse(rawAttributes).portlandMapsId ?? null;
+      } catch { /* ignore */ }
+      return { ...s, portlandMapsId };
+    });
+
     return NextResponse.json({
-      spaces,
+      spaces: spacesWithPmId,
       total,
       page,
       pages: Math.ceil(total / limit),

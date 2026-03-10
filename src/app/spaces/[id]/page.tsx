@@ -40,6 +40,7 @@ type SpaceDetail = {
   imageUrl: string | null;
   lat: number;
   lng: number;
+  portlandMapsId: string | null;
   ideas: Idea[];
   themes: Theme[];
   totalPledgedCents: number;
@@ -50,6 +51,14 @@ const TABS = [
   { id: "themes" as const, emoji: "🗳️", label: "Vote",   sub: "Pick favorites" },
   { id: "pledge" as const, emoji: "🤝", label: "Pledge", sub: "Show support"   },
 ];
+
+function portlandMapsUrl(address: string, portlandMapsId: string | null): string {
+  if (portlandMapsId) {
+    const slug = address.replace(/\//g, "").replace(/\s+/g, "-").replace(/-+/g, "-").trim();
+    return `https://www.portlandmaps.com/detail/property/${slug}/${portlandMapsId}_did/?search=${encodeURIComponent(address)}`;
+  }
+  return `https://www.portlandmaps.com/?search=${encodeURIComponent(address)}`;
+}
 
 function FeasibilityBadge({ status }: { status: string }) {
   if (status === "feasible")
@@ -214,7 +223,7 @@ export default function SpaceDetailPage() {
           </a>
           <span className="ml-auto">
             <a
-              href={`https://www.portlandmaps.com/?search=${encodeURIComponent(space.address)}`}
+              href={portlandMapsUrl(space.address, space.portlandMapsId)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 ring-1 ring-blue-200 hover:bg-blue-100 transition-colors"

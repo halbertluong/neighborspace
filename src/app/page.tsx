@@ -22,6 +22,7 @@ type Space = {
   lat: number;
   lng: number;
   occupancyStatus: string | null;
+  portlandMapsId: string | null;
   _count: { ideas: number; themes: number };
 };
 
@@ -31,6 +32,15 @@ type ListResponse = {
   page: number;
   pages: number;
 };
+
+// ─── Portland Maps URL helper ────────────────────────────────────────────────
+function portlandMapsUrl(address: string, portlandMapsId: string | null): string {
+  if (portlandMapsId) {
+    const slug = address.replace(/\//g, "").replace(/\s+/g, "-").replace(/-+/g, "-").trim();
+    return `https://www.portlandmaps.com/detail/property/${slug}/${portlandMapsId}_did/?search=${encodeURIComponent(address)}`;
+  }
+  return `https://www.portlandmaps.com/?search=${encodeURIComponent(address)}`;
+}
 
 // ─── Badge ───────────────────────────────────────────────────────────────────
 function ZoneBadge({ code }: { code: string | null | undefined }) {
@@ -101,12 +111,12 @@ function SpaceCard({ space, selected, onHover }: {
         <div className="mt-2 flex items-center justify-between gap-2">
           <p className="text-xs font-medium text-emerald-600 group-hover:text-emerald-700">Dream about it →</p>
           <a
-            href={`https://www.portlandmaps.com/?search=${encodeURIComponent(space.address)}`}
+            href={portlandMapsUrl(space.address, space.portlandMapsId)}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
             className="shrink-0 text-[11px] font-medium text-blue-500 hover:text-blue-700 hover:underline"
-            title="Look up property owner, permits, and contact info on Portland Maps"
+            title="View property owner, permits, and contact info on Portland Maps"
           >
             Contact owner ↗
           </a>
@@ -322,6 +332,7 @@ export default function Home() {
           lat:             data.lat,
           lng:             data.lng,
           occupancyStatus: data.occupancyStatus  ?? null,
+          portlandMapsId:  data.portlandMapsId   ?? null,
           _count: {
             ideas:  (data.ideas  ?? []).length,
             themes: (data.themes ?? []).length,
