@@ -22,6 +22,8 @@
     "enrich:occupancy:dry": "DRY_RUN=1 npx tsx scripts/enrich-occupancy.ts",
     "enrich:portlandmaps": "npx tsx scripts/enrich-portlandmaps-ids.ts",
     "enrich:portlandmaps:dry": "DRY_RUN=1 npx tsx scripts/enrich-portlandmaps-ids.ts",
+    "enrich:portlandmaps:wi": "npx tsx scripts/enrich-portlandmaps-wi.ts",
+    "enrich:portlandmaps:wi:dry": "DRY_RUN=1 npx tsx scripts/enrich-portlandmaps-wi.ts",
     "test": "npx tsx scripts/test-site.ts",
     "test:prod": "BASE_URL=https://neighborspace.vercel.app npx tsx scripts/test-site.ts",
     "postinstall": "prisma generate"

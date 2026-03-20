@@ -23,6 +23,7 @@ type Space = {
   lng: number;
   occupancyStatus: string | null;
   portlandMapsId: string | null;
+  portlandMapsLinkAddress: string | null;
   _count: { ideas: number; themes: number };
 };
 
@@ -34,10 +35,11 @@ type ListResponse = {
 };
 
 // ─── Portland Maps URL helper ────────────────────────────────────────────────
-function portlandMapsUrl(address: string, portlandMapsId: string | null): string {
+function portlandMapsUrl(address: string, portlandMapsId: string | null, linkAddress?: string | null): string {
   if (portlandMapsId) {
-    const slug = address.replace(/\//g, "").replace(/\s+/g, "-").replace(/-+/g, "-").trim();
-    return `https://www.portlandmaps.com/detail/property/${slug}/${portlandMapsId}_did/?search=${encodeURIComponent(address)}`;
+    const addrForUrl = linkAddress ?? address;
+    const slug = addrForUrl.replace(/\//g, "").replace(/\s+/g, "-").replace(/-+/g, "-").trim();
+    return `https://www.portlandmaps.com/detail/property/${slug}/${portlandMapsId}_did/?search=${encodeURIComponent(addrForUrl)}`;
   }
   return `https://www.portlandmaps.com/?search=${encodeURIComponent(address)}`;
 }
@@ -111,7 +113,7 @@ function SpaceCard({ space, selected, onHover }: {
         <div className="mt-2 flex items-center justify-between gap-2">
           <p className="text-xs font-medium text-emerald-600 group-hover:text-emerald-700">Dream about it →</p>
           <a
-            href={portlandMapsUrl(space.address, space.portlandMapsId)}
+            href={portlandMapsUrl(space.address, space.portlandMapsId, space.portlandMapsLinkAddress)}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
@@ -332,7 +334,8 @@ export default function Home() {
           lat:             data.lat,
           lng:             data.lng,
           occupancyStatus: data.occupancyStatus  ?? null,
-          portlandMapsId:  data.portlandMapsId   ?? null,
+          portlandMapsId:          data.portlandMapsId          ?? null,
+          portlandMapsLinkAddress: data.portlandMapsLinkAddress  ?? null,
           _count: {
             ideas:  (data.ideas  ?? []).length,
             themes: (data.themes ?? []).length,

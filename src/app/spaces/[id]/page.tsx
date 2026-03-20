@@ -41,6 +41,7 @@ type SpaceDetail = {
   lat: number;
   lng: number;
   portlandMapsId: string | null;
+  portlandMapsLinkAddress: string | null;
   ideas: Idea[];
   themes: Theme[];
   totalPledgedCents: number;
@@ -52,10 +53,11 @@ const TABS = [
   { id: "pledge" as const, emoji: "🤝", label: "Pledge", sub: "Show support"   },
 ];
 
-function portlandMapsUrl(address: string, portlandMapsId: string | null): string {
+function portlandMapsUrl(address: string, portlandMapsId: string | null, linkAddress?: string | null): string {
   if (portlandMapsId) {
-    const slug = address.replace(/\//g, "").replace(/\s+/g, "-").replace(/-+/g, "-").trim();
-    return `https://www.portlandmaps.com/detail/property/${slug}/${portlandMapsId}_did/?search=${encodeURIComponent(address)}`;
+    const addrForUrl = linkAddress ?? address;
+    const slug = addrForUrl.replace(/\//g, "").replace(/\s+/g, "-").replace(/-+/g, "-").trim();
+    return `https://www.portlandmaps.com/detail/property/${slug}/${portlandMapsId}_did/?search=${encodeURIComponent(addrForUrl)}`;
   }
   return `https://www.portlandmaps.com/?search=${encodeURIComponent(address)}`;
 }
@@ -223,7 +225,7 @@ export default function SpaceDetailPage() {
           </a>
           <span className="ml-auto">
             <a
-              href={portlandMapsUrl(space.address, space.portlandMapsId)}
+              href={portlandMapsUrl(space.address, space.portlandMapsId, space.portlandMapsLinkAddress)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 ring-1 ring-blue-200 hover:bg-blue-100 transition-colors"

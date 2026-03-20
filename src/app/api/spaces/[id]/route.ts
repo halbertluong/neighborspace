@@ -23,12 +23,21 @@ export async function GET(
     if (!space) return NextResponse.json({ error: "Space not found" }, { status: 404 });
     const totalPledgedCents = space.pledges.reduce((s, p) => s + p.amountCents, 0);
     let portlandMapsId: string | null = null;
-    try { if (space.rawAttributes) portlandMapsId = JSON.parse(space.rawAttributes).portlandMapsId ?? null; }
-    catch { /* ignore */ }
+    let portlandMapsLinkAddress: string | null = null;
+    try {
+      if (space.rawAttributes) {
+        const raw = JSON.parse(space.rawAttributes);
+        portlandMapsId = raw.portlandMapsId ?? null;
+        if (raw.portlandMapsViaAltAddr && raw.portlandMapsMatchAddr) {
+          portlandMapsLinkAddress = raw.portlandMapsMatchAddr.split(",")[0].trim();
+        }
+      }
+    } catch { /* ignore */ }
     return NextResponse.json({
       ...space,
       totalPledgedCents,
       portlandMapsId,
+      portlandMapsLinkAddress,
     });
   } catch (e) {
     console.error(e);

@@ -81,10 +81,18 @@ export async function GET(request: NextRequest) {
 
     const spacesWithPmId = spaces.map(({ rawAttributes, ...s }) => {
       let portlandMapsId: string | null = null;
+      let portlandMapsLinkAddress: string | null = null;
       try {
-        if (rawAttributes) portlandMapsId = JSON.parse(rawAttributes).portlandMapsId ?? null;
+        if (rawAttributes) {
+          const raw = JSON.parse(rawAttributes);
+          portlandMapsId = raw.portlandMapsId ?? null;
+          // For WI/ spaces geocoded via alternate taxlot address, use that address for the URL
+          if (raw.portlandMapsViaAltAddr && raw.portlandMapsMatchAddr) {
+            portlandMapsLinkAddress = raw.portlandMapsMatchAddr.split(",")[0].trim();
+          }
+        }
       } catch { /* ignore */ }
-      return { ...s, portlandMapsId };
+      return { ...s, portlandMapsId, portlandMapsLinkAddress };
     });
 
     return NextResponse.json({
