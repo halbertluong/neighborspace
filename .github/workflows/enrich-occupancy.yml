@@ -1,0 +1,43 @@
+name: Enrich Occupancy (Cross-Reference)
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_google:
+        description: 'Use Google Places API (requires GOOGLE_MAPS_API_KEY secret)'
+        type: boolean
+        default: true
+      use_yelp:
+        description: 'Use Yelp Fusion API (requires YELP_API_KEY secret, 500 req/day limit)'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry run — show what would change without writing to DB'
+        type: boolean
+        default: false
+
+jobs:
+  enrich:
+    name: Cross-reference vacant listings
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run occupancy enrichment
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOOGLE_MAPS_API_KEY: ${{ inputs.use_google && secrets.GOOGLE_MAPS_API_KEY || '' }}
+          YELP_API_KEY: ${{ inputs.use_yelp && secrets.YELP_API_KEY || '' }}
+          YELP_ENABLE: ${{ inputs.use_yelp && '1' || '0' }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: npx tsx scripts/enrich-occupancy-places.ts
