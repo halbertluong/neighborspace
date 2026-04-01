@@ -20,6 +20,8 @@
     "sync:portland:dry": "DRY_RUN=1 npx tsx scripts/sync-portland.ts",
     "enrich:occupancy": "npx tsx scripts/enrich-occupancy.ts",
     "enrich:occupancy:dry": "DRY_RUN=1 npx tsx scripts/enrich-occupancy.ts",
+    "enrich:occupancy:places": "npx tsx scripts/enrich-occupancy-places.ts",
+    "enrich:occupancy:places:dry": "DRY_RUN=1 npx tsx scripts/enrich-occupancy-places.ts",
     "enrich:portlandmaps": "npx tsx scripts/enrich-portlandmaps-ids.ts",
     "enrich:portlandmaps:dry": "DRY_RUN=1 npx tsx scripts/enrich-portlandmaps-ids.ts",
     "enrich:portlandmaps:wi": "npx tsx scripts/enrich-portlandmaps-wi.ts",
