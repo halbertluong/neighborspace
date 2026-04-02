@@ -31,9 +31,11 @@ const YELP_ENABLE = process.env.YELP_ENABLE === "1";
 // How close (meters) a business must be to count as occupying the space
 const MATCH_RADIUS_M = 40;
 
-// Delay between API calls to respect rate limits (ms)
-const GOOGLE_DELAY_MS = 150; // ~6 req/s → well under 600/min limit
-const YELP_DELAY_MS = 500;   // 500 req/day → be conservative
+// Concurrent API calls per batch (Google allows 10 req/s on free tier)
+const CONCURRENCY = 8;
+
+// Yelp free tier cap (500 req/day) — stop after this many Yelp calls
+const YELP_MAX = parseInt(process.env.YELP_MAX ?? "490", 10);
 
 // Portland bounding box for OSM fallback
 const BBOX = "45.43,-122.84,45.65,-122.47";
@@ -216,66 +218,59 @@ async function main() {
   // Pre-fetch OSM data (one bulk request, much faster than per-space queries)
   const osmPoints = await fetchOsmBusinesses();
 
-  // Process each space
+  // Process spaces in concurrent batches
   const toMarkOccupied: Array<{ id: string; address: string; source: string; bizName: string }> = [];
   let googleChecked = 0;
   let yelpChecked = 0;
   let errorCount = 0;
+  let processed = 0;
 
-  for (let i = 0; i < spaces.length; i++) {
-    const space = spaces[i];
-    const progress = `[${i + 1}/${spaces.length}]`;
+  for (let batchStart = 0; batchStart < spaces.length; batchStart += CONCURRENCY) {
+    const batch = spaces.slice(batchStart, batchStart + CONCURRENCY);
 
-    let foundBy: string | null = null;
-    let bizName = "";
+    await Promise.all(batch.map(async (space) => {
+      let foundBy: string | null = null;
+      let bizName = "";
 
-    // 1. OSM check (instant — data already fetched)
-    if (checkOsm(osmPoints, space.lat, space.lng)) {
-      foundBy = "OSM";
-      bizName = "(OSM match)";
-    }
+      // 1. OSM check (instant — in-memory)
+      if (checkOsm(osmPoints, space.lat, space.lng)) {
+        foundBy = "OSM";
+        bizName = "(OSM match)";
+      }
 
-    // 2. Google Places (if not already found)
-    if (!foundBy && GOOGLE_KEY) {
-      try {
-        await sleep(GOOGLE_DELAY_MS);
-        const hit = await checkGooglePlaces(space.lat, space.lng);
-        googleChecked++;
-        if (hit) {
-          foundBy = "Google Places";
-          bizName = hit.name;
+      // 2. Google Places (if not already found)
+      if (!foundBy && GOOGLE_KEY) {
+        try {
+          const hit = await checkGooglePlaces(space.lat, space.lng);
+          googleChecked++;
+          if (hit) { foundBy = "Google Places"; bizName = hit.name; }
+        } catch (e) {
+          errorCount++;
         }
-      } catch (e) {
-        errorCount++;
-        console.warn(`  ${progress} Google error for ${space.address}: ${(e as Error).message}`);
       }
-    }
 
-    // 3. Yelp (if not already found and enabled)
-    if (!foundBy && YELP_KEY && YELP_ENABLE) {
-      try {
-        await sleep(YELP_DELAY_MS);
-        const hit = await checkYelp(space.lat, space.lng);
-        yelpChecked++;
-        if (hit) {
-          foundBy = "Yelp";
-          bizName = hit.name;
+      // 3. Yelp (if not already found, enabled, and under daily cap)
+      if (!foundBy && YELP_KEY && YELP_ENABLE && yelpChecked < YELP_MAX) {
+        try {
+          const hit = await checkYelp(space.lat, space.lng);
+          yelpChecked++;
+          if (hit) { foundBy = "Yelp"; bizName = hit.name; }
+        } catch (e) {
+          errorCount++;
         }
-      } catch (e) {
-        errorCount++;
-        console.warn(`  ${progress} Yelp error for ${space.address}: ${(e as Error).message}`);
       }
-    }
 
-    if (foundBy) {
-      console.log(`  ${progress} OCCUPIED  ${space.address} — "${bizName}" (via ${foundBy})`);
-      toMarkOccupied.push({ id: space.id, address: space.address, source: foundBy, bizName });
-    } else {
-      // Only log every 50 to avoid flooding the console
-      if (i % 50 === 0 || i === spaces.length - 1) {
-        process.stdout.write(`\r  ${progress} scanning... (${toMarkOccupied.length} occupied so far)    `);
+      processed++;
+      if (foundBy) {
+        console.log(`  OCCUPIED  ${space.address} — "${bizName}" (via ${foundBy})`);
+        toMarkOccupied.push({ id: space.id, address: space.address, source: foundBy, bizName });
       }
-    }
+    }));
+
+    // Brief pause between batches to stay under rate limits (~8 req/s for Google)
+    if (batchStart + CONCURRENCY < spaces.length) await sleep(100);
+
+    process.stdout.write(`\r  Progress: ${processed}/${spaces.length} (${toMarkOccupied.length} occupied)   `);
   }
 
   console.log(`\n\n── Results ─────────────────────────────────────────────────────`);
