@@ -149,6 +149,61 @@ function SpaceCard({ space, selected, onHover }: {
   );
 }
 
+// ─── Mobile space card (Zillow-style, larger) ────────────────────────────────
+function MobileSpaceCard({ space, selected }: { space: Space; selected: boolean }) {
+  const router = useRouter();
+  const sqft = space.squareFeet;
+  const sqftLabel = sqft ? (sqft >= 1000 ? `${(sqft / 1000).toFixed(1)}k ft²` : `${sqft} ft²`) : null;
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(`/spaces/${space.id}`)}
+      onKeyDown={(e) => e.key === "Enter" && router.push(`/spaces/${space.id}`)}
+      className={`overflow-hidden rounded-2xl bg-white ring-1 transition-all active:scale-[0.98] ${
+        selected ? "ring-emerald-400 shadow-md" : "ring-stone-200 shadow-sm"
+      }`}
+    >
+      <div className="relative h-44 w-full overflow-hidden bg-stone-100">
+        <SpacePhoto spaceId={space.id} imageUrl={space.imageUrl} lat={space.lat} lng={space.lng} alt={space.name} size="thumb" className="h-full w-full object-cover" />
+        {space.occupancyStatus === "likely_vacant" && (
+          <span className="absolute left-3 top-3 rounded-full bg-emerald-500 px-2.5 py-1 text-[11px] font-bold text-white shadow">
+            Likely vacant
+          </span>
+        )}
+        {(space._count.ideas > 0 || space._count.themes > 0) && (
+          <div className="absolute right-3 top-3 flex gap-1">
+            {space._count.ideas > 0 && (
+              <span className="rounded-full bg-amber-400/90 px-2 py-0.5 text-[10px] font-bold text-amber-950 backdrop-blur-sm">
+                {space._count.ideas} 💡
+              </span>
+            )}
+            {space._count.themes > 0 && (
+              <span className="rounded-full bg-emerald-500/90 px-2 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
+                {space._count.themes} 🗳️
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="px-4 py-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-base font-bold leading-tight text-stone-900">{space.name}</p>
+            <p className="mt-0.5 truncate text-sm text-stone-500">{space.address}</p>
+          </div>
+          {sqftLabel && <p className="flex-shrink-0 text-sm font-semibold text-stone-700">{sqftLabel}</p>}
+        </div>
+        <div className="mt-2.5 flex items-center gap-2">
+          <ZoneBadge code={space.zoningCode} />
+          {space.previousUse && <span className="text-xs text-stone-400">was {space.previousUse.toLowerCase()}</span>}
+          <span className="ml-auto text-sm font-semibold text-emerald-600">Dream it →</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Filter pill button ───────────────────────────────────────────────────────
 function FilterPill({ active, onClick, children, className = "" }: {
   active: boolean;
@@ -185,6 +240,12 @@ export default function Home() {
   const [selectedSpaceDetail, setSelectedSpaceDetail] = useState<Space | null>(null);
   const [mobileView, setMobileView] = useState<"map" | "list">("map");
 
+  // Mobile bottom sheet
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  const touchStartY = useRef(0);
+  const touchStartExpanded = useRef(false);
+  const PEEK_HEIGHT = 172; // px visible when collapsed
+
   // Map markers (lightweight — fetched once per filter change)
   const [markers, setMarkers] = useState<SpaceMarker[]>([]);
   const [markersLoading, setMarkersLoading] = useState(true);
@@ -200,10 +261,11 @@ export default function Home() {
     zones: string[]; formerlyOptions: string[]; neighborhoods: string[];
   }>({ zones: [], formerlyOptions: [], neighborhoods: [] });
 
-  const listRef      = useRef<HTMLDivElement>(null);
-  const mapRef       = useRef<SpaceMapHandle>(null);
+  const listRef        = useRef<HTMLDivElement>(null); // mobile sheet list
+  const desktopListRef = useRef<HTMLDivElement>(null); // desktop sidebar list
+  const mapRef         = useRef<SpaceMapHandle>(null);
   const filterPanelRef = useRef<HTMLDivElement>(null);
-  const sentinelRef  = useRef<HTMLDivElement>(null);
+  const sentinelRef    = useRef<HTMLDivElement>(null);
   const isInitialMarkersLoad = useRef(true);
 
   // ── Build marker query params ─────────────────────────────────────────────
@@ -308,11 +370,12 @@ export default function Home() {
     const found = listItems.find((s) => s.id === selectedId);
     if (found) {
       setSelectedSpaceDetail(null);
-      // Small delay so mobile view transition finishes before scrolling
       setTimeout(() => {
-        listRef.current
-          ?.querySelector(`[data-id="${selectedId}"]`)
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        // Scroll whichever list is active
+        [listRef, desktopListRef].forEach((ref) => {
+          ref.current?.querySelector(`[data-id="${selectedId}"]`)
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
       }, 150);
       return;
     }
@@ -341,7 +404,10 @@ export default function Home() {
             themes: (data.themes ?? []).length,
           },
         });
-        setTimeout(() => listRef.current?.scrollTo({ top: 0, behavior: "smooth" }), 150);
+        setTimeout(() => {
+          listRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+          desktopListRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+        }, 150);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -395,67 +461,177 @@ export default function Home() {
   return (
     <div className="relative flex h-[calc(100dvh-56px)] flex-col overflow-hidden lg:flex-row">
 
-      {/* ── MOBILE TOP BAR — always visible on mobile ─────────────────── */}
-      <div className="flex-shrink-0 border-b border-stone-100 bg-white px-4 py-2.5 lg:hidden">
-        <div className="flex items-center gap-2">
-          {/* Map / List toggle */}
-          <div className="flex rounded-xl bg-stone-100 p-0.5 flex-shrink-0">
-            <button
-              onClick={() => setMobileView("map")}
-              className={`flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-xs font-semibold transition-all ${
-                mobileView === "map" ? "bg-white text-stone-900 shadow-sm" : "text-stone-500"
-              }`}
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498l4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 00-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497z" />
-              </svg>
-              Map
-            </button>
-            <button
-              onClick={() => setMobileView("list")}
-              className={`flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-xs font-semibold transition-all ${
-                mobileView === "list" ? "bg-white text-stone-900 shadow-sm" : "text-stone-500"
-              }`}
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-              </svg>
-              {markersLoading ? "…" : (markers.length ?? 0).toLocaleString()}
-            </button>
+      {/* ── MOBILE LAYOUT — full-screen map + bottom sheet ────────────── */}
+      <div className="relative flex-1 lg:hidden">
+
+        {/* Full-screen map */}
+        <SpaceMap
+          ref={mapRef}
+          spaces={markers}
+          selectedId={selectedId}
+          onSelect={(id) => { setSelectedId(id); setSheetExpanded(false); }}
+          onBoundsChange={handleBoundsChange}
+          className="absolute inset-0 h-full w-full"
+        />
+
+        {/* Floating top bar */}
+        <div className="pointer-events-none absolute left-3 right-3 top-3 z-20 flex items-center gap-2">
+          <div className="pointer-events-auto flex-1 rounded-2xl bg-white/95 px-4 py-2.5 shadow-lg backdrop-blur-sm">
+            <p className="text-sm font-semibold text-stone-800">
+              {listLoading ? "Loading…" : `${(listMeta?.total ?? markers.length).toLocaleString()} spaces`}
+              {activeFilters > 0 && <span className="ml-1.5 text-xs font-medium text-emerald-600">· {activeFilters} filter{activeFilters !== 1 ? "s" : ""}</span>}
+            </p>
           </div>
-
-          {/* Spacer + count */}
-          <p className="min-w-0 flex-1 truncate text-xs text-stone-400">
-            {listLoading ? "Loading…" : listMeta
-              ? <><span className="font-semibold text-stone-700">{(listMeta.total ?? 0).toLocaleString()}</span>{" in view"}</>
-              : "Portland vacant spaces"
-            }
-          </p>
-
-          {/* Filter button */}
           <button
-            onClick={() => setFiltersOpen((o) => !o)}
-            className={`flex-shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
-              filtersOpen || activeFilters > 0
-                ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                : "bg-stone-100 text-stone-600"
+            onClick={() => setFiltersOpen(true)}
+            className={`pointer-events-auto flex items-center gap-1.5 rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-lg backdrop-blur-sm ${
+              activeFilters > 0 ? "bg-emerald-600 text-white" : "bg-white/95 text-stone-700"
             }`}
           >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
             </svg>
-            Filters{activeFilters > 0 ? ` · ${activeFilters}` : ""}
+            {activeFilters > 0 ? `${activeFilters}` : "Filters"}
           </button>
+        </div>
+
+        {/* Selected-space preview card (Zillow-style) */}
+        {selectedId && (
+          <div
+            className="absolute left-3 right-3 z-20 sheet-transition"
+            style={{ bottom: PEEK_HEIGHT + 12 }}
+          >
+            {(() => {
+              const sp = selectedSpaceDetail ?? listItems.find((s) => s.id === selectedId);
+              if (!sp) return null;
+              return (
+                <div
+                  className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-xl"
+                >
+                  <a href={`/spaces/${sp.id}`} className="contents">
+                    <div className="h-16 w-20 flex-shrink-0 overflow-hidden rounded-xl bg-stone-100">
+                      <SpacePhoto spaceId={sp.id} imageUrl={sp.imageUrl} lat={sp.lat} lng={sp.lng} alt={sp.name} size="thumb" className="h-full w-full object-cover" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-stone-900">{sp.name}</p>
+                      <p className="truncate text-xs text-stone-500">{sp.address}</p>
+                      {sp.squareFeet && <p className="mt-0.5 text-xs font-medium text-stone-600">{sp.squareFeet.toLocaleString()} ft²</p>}
+                    </div>
+                    <span className="flex-shrink-0 text-xs font-semibold text-emerald-600">Open →</span>
+                  </a>
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedId(null); }}
+                    className="-mr-1 flex-shrink-0 rounded-full p-1.5 text-stone-400 hover:bg-stone-100"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Bottom sheet */}
+        <div
+          className="absolute bottom-0 left-0 right-0 z-20 flex flex-col rounded-t-3xl bg-white shadow-2xl sheet-transition"
+          style={{
+            height: "calc(100% - 56px)",
+            transform: sheetExpanded ? "translateY(0)" : `translateY(calc(100% - ${PEEK_HEIGHT}px))`,
+          }}
+          onTouchStart={(e) => { touchStartY.current = e.touches[0].clientY; touchStartExpanded.current = sheetExpanded; }}
+          onTouchEnd={(e) => {
+            const delta = touchStartY.current - e.changedTouches[0].clientY;
+            if (delta > 40) setSheetExpanded(true);
+            else if (delta < -40) setSheetExpanded(false);
+          }}
+        >
+          {/* Drag handle + count */}
+          <div
+            className="flex-shrink-0 cursor-pointer select-none px-4 pb-2 pt-3"
+            onClick={() => setSheetExpanded((v) => !v)}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-stone-300" />
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-stone-900">
+                {listLoading ? "Loading…" : `${(listMeta?.total ?? 0).toLocaleString()} spaces`}
+              </p>
+              <p className="text-xs text-stone-400">{sheetExpanded ? "Swipe down ↓" : "Swipe up ↑"}</p>
+            </div>
+          </div>
+
+          {/* Scrollable card list */}
+          <div ref={listRef} className="sheet-scroll flex-1 overflow-y-auto px-4 pb-safe">
+            {listLoading && listItems.length === 0 ? (
+              <div className="space-y-4 pt-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="overflow-hidden rounded-2xl bg-white ring-1 ring-stone-200">
+                    <div className="shimmer h-44 w-full" />
+                    <div className="space-y-2 p-4">
+                      <div className="shimmer h-5 w-3/4 rounded" />
+                      <div className="shimmer h-4 w-1/2 rounded" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : listItems.length === 0 && !listLoading ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <div className="text-4xl">🗺️</div>
+                <p className="text-base font-semibold text-stone-600">No spaces in this view</p>
+                <p className="text-sm text-stone-400">Pan the map or clear filters</p>
+                {activeFilters > 0 && (
+                  <button onClick={() => { setFilterZone(""); setFilterFormerly(""); setFilterNeighborhoods([]); setFilterSqft(""); setExcludeOffices(false); setOnlyVacant(false); }} className="mt-1 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4 pt-2">
+                {selectedSpaceDetail && (
+                  <div>
+                    <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Selected</p>
+                    <MobileSpaceCard space={selectedSpaceDetail} selected={true} />
+                  </div>
+                )}
+                {listItems.map((space) => (
+                  <div key={space.id} data-id={space.id}>
+                    <MobileSpaceCard space={space} selected={selectedId === space.id} />
+                  </div>
+                ))}
+                {listMeta && listMeta.page < listMeta.pages ? (
+                  <div ref={sentinelRef} className="py-6 text-center text-xs text-stone-400">
+                    {loadingMore ? "Loading more…" : ""}
+                  </div>
+                ) : listMeta && listItems.length > 0 ? (
+                  <p className="py-6 text-center text-xs text-stone-400">All {(listMeta.total ?? 0).toLocaleString()} spaces loaded</p>
+                ) : null}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── FILTER OVERLAY — absolutely positioned over map or list ─────── */}
+      {/* ── FILTER PANEL — bottom sheet on mobile, dropdown on desktop ─── */}
       {filtersOpen && (
         <div
           ref={filterPanelRef}
-          className="absolute top-[48px] left-0 right-0 z-50 border-b border-stone-200 bg-white shadow-xl lg:top-[57px] lg:right-auto lg:w-[400px]"
+          className="fixed inset-0 z-50 lg:absolute lg:inset-auto lg:left-0 lg:right-auto lg:top-[57px] lg:w-[400px]"
         >
-            <div className="max-h-[55vh] overflow-y-auto overscroll-contain px-4 py-3 space-y-4">
+          {/* Mobile backdrop */}
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm lg:hidden" onClick={() => setFiltersOpen(false)} />
+          {/* Panel */}
+          <div className="absolute bottom-0 left-0 right-0 flex max-h-[88vh] flex-col rounded-t-3xl bg-white shadow-2xl lg:static lg:max-h-none lg:rounded-none lg:shadow-none lg:border-b lg:border-stone-200"
+        >
+            {/* Mobile-only header */}
+          <div className="flex flex-shrink-0 items-center justify-between border-b border-stone-100 px-5 py-4 lg:hidden">
+            <h2 className="text-lg font-bold text-stone-900">Filters</h2>
+            {activeFilters > 0 && (
+              <button onClick={() => { setFilterZone(""); setFilterFormerly(""); setFilterNeighborhoods([]); setFilterSqft(""); setExcludeOffices(false); setOnlyVacant(false); }} className="text-sm font-medium text-red-500">Clear all</button>
+            )}
+          </div>
+
+          <div className="sheet-scroll flex-1 overflow-y-auto overscroll-contain px-4 py-3 space-y-4 lg:max-h-[55vh]">
 
               {/* Only likely vacant toggle */}
               <button
@@ -563,28 +739,35 @@ export default function Home() {
                     × Clear {activeFilters} filter{activeFilters !== 1 ? "s" : ""}
                   </button>
                 )}
-                <button onClick={() => setFiltersOpen(false)} className="ml-auto text-xs font-medium text-stone-400 hover:text-stone-600">
+                <button onClick={() => setFiltersOpen(false)} className="ml-auto text-xs font-medium text-stone-400 hover:text-stone-600 lg:block hidden">
                   Done
                 </button>
               </div>
             </div>
+          {/* Mobile-only show results button */}
+          <div className="flex-shrink-0 border-t border-stone-100 px-5 py-4 pb-safe lg:hidden">
+            <button onClick={() => setFiltersOpen(false)} className="w-full rounded-2xl bg-stone-900 py-3.5 text-sm font-bold text-white">
+              Show {(listMeta?.total ?? markers.length).toLocaleString()} spaces
+            </button>
           </div>
+          </div>
+        </div>
       )}
 
-      {/* ── MAP ─────────────────────────────────────────────────────────── */}
-      <div className={`relative flex-shrink-0 lg:order-2 lg:flex-1 ${mobileView === "map" ? "flex-1" : "hidden lg:block"}`}>
+      {/* ── DESKTOP MAP ─────────────────────────────────────────────────── */}
+      <div className="relative hidden flex-shrink-0 lg:order-2 lg:flex lg:flex-1">
         <SpaceMap
           ref={mapRef}
           spaces={markers}
           selectedId={selectedId}
-          onSelect={(id) => { setSelectedId(id); setMobileView("list"); }}
+          onSelect={(id) => setSelectedId(id)}
           onBoundsChange={handleBoundsChange}
           className="h-full w-full"
         />
       </div>
 
-      {/* ── LEFT PANEL ──────────────────────────────────────────────────── */}
-      <aside className={`flex w-full flex-col bg-white lg:order-1 lg:w-[400px] lg:flex-shrink-0 lg:border-r lg:border-stone-200 ${mobileView === "list" ? "flex-1" : "hidden lg:flex"}`}>
+      {/* ── DESKTOP LEFT PANEL ──────────────────────────────────────────── */}
+      <aside className="hidden w-full flex-col bg-white lg:order-1 lg:flex lg:w-[400px] lg:flex-shrink-0 lg:border-r lg:border-stone-200">
 
         {/* Desktop-only sticky header */}
         <div className="hidden flex-shrink-0 border-b border-stone-100 bg-white px-4 py-3 lg:block">
@@ -615,7 +798,7 @@ export default function Home() {
         </div>
 
         {/* ── Scrollable card list ────────────────────────────────────── */}
-        <div ref={listRef} className="flex-1 overflow-y-auto p-4 pb-safe">
+        <div ref={desktopListRef} className="flex-1 overflow-y-auto p-4 pb-safe">
           {listLoading && listItems.length === 0 && !selectedSpaceDetail ? (
             <div className="space-y-4">
               {[1, 2, 3, 4].map((i) => (

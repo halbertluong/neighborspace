@@ -39,3 +39,14 @@ body {
   background-size: 800px 100%;
   animation: shimmer 1.4s infinite linear;
 }
+
+/* Bottom sheet snap transition */
+.sheet-transition {
+  transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Prevent scroll bleed from sheet into map */
+.sheet-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
