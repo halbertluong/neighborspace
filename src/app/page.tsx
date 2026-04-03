@@ -435,11 +435,10 @@ export default function Home() {
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    const container = listRef.current;
-    if (!sentinel || !container) return;
+    if (!sentinel) return;
     const observer = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadMoreRef.current(); },
-      { root: container, rootMargin: "120px" }
+      { rootMargin: "200px" }
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
@@ -769,27 +768,28 @@ export default function Home() {
       {/* ── DESKTOP LEFT PANEL ──────────────────────────────────────────── */}
       <aside className="hidden w-full flex-col bg-white lg:order-1 lg:flex lg:w-[400px] lg:flex-shrink-0 lg:border-r lg:border-stone-200">
 
-        {/* Desktop-only sticky header */}
-        <div className="hidden flex-shrink-0 border-b border-stone-100 bg-white px-4 py-3 lg:block">
+        {/* Desktop header */}
+        <div className="flex-shrink-0 border-b border-stone-100 bg-white px-4 py-3">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <h1 className="text-base font-bold text-stone-900">What should open here?</h1>
-              <p className="text-xs text-stone-400 truncate">
-                {listLoading ? "Loading…" : listMeta
-                  ? <><span className="font-semibold text-emerald-600">{(listMeta.total ?? 0).toLocaleString()}</span>{" spaces in view"}</>
-                  : <><span className="font-semibold text-emerald-600">{(markers.length ?? 0).toLocaleString()}</span>{" spaces"}</>
-                }
+              <p className="text-sm font-bold text-stone-900">
+                {listLoading ? "Loading…" : (
+                  <><span className="text-emerald-600">{(listMeta?.total ?? markers.length).toLocaleString()}</span>{" spaces in view"}</>
+                )}
               </p>
+              {activeFilters > 0 && (
+                <p className="text-xs text-stone-400">{activeFilters} filter{activeFilters !== 1 ? "s" : ""} active</p>
+              )}
             </div>
             <button
               onClick={() => setFiltersOpen((o) => !o)}
-              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
                 filtersOpen || activeFilters > 0
-                  ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                  : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-stone-100 text-stone-700 hover:bg-stone-200"
               }`}
             >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
               </svg>
               Filters{activeFilters > 0 ? ` · ${activeFilters}` : ""}
@@ -803,7 +803,7 @@ export default function Home() {
             <div className="space-y-4">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="overflow-hidden rounded-2xl bg-white ring-1 ring-stone-200">
-                  <div className="shimmer h-36 w-full" />
+                  <div className="shimmer h-44 w-full" />
                   <div className="space-y-2 p-3">
                     <div className="shimmer h-4 w-3/4 rounded" />
                     <div className="shimmer h-3 w-1/2 rounded" />
@@ -834,14 +834,14 @@ export default function Home() {
                     Selected
                   </p>
                   <div data-id={selectedSpaceDetail.id}>
-                    <SpaceCard space={selectedSpaceDetail} selected={true} onHover={() => {}} />
+                    <MobileSpaceCard space={selectedSpaceDetail} selected={true} />
                   </div>
                 </div>
               )}
 
               {listItems.map((space) => (
                 <div key={space.id} data-id={space.id}>
-                  <SpaceCard space={space} selected={selectedId === space.id} onHover={setSelectedId} />
+                  <MobileSpaceCard space={space} selected={selectedId === space.id} />
                 </div>
               ))}
 
