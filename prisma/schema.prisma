@@ -23,6 +23,7 @@ model Space {
   rawAttributes String?  @map("raw_attributes")      // JSON blob for source-specific fields
   status          String    @default("active")           // active | retired
   occupancyStatus String?   @map("occupancy_status")    // occupied | likely_vacant | null=unknown
+  yelpCheckedAt   DateTime? @map("yelp_checked_at")      // last time Yelp/Google cross-reference ran
   syncedAt        DateTime? @map("synced_at")            // last confirmed present in source
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")

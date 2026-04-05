@@ -1,23 +1,29 @@
 /**
  * Occupancy enrichment via Google Places + Yelp Fusion APIs
  *
- * Only processes spaces currently marked "likely_vacant" and upgrades them
- * to "occupied" when an active business is found nearby. Never downgrades.
+ * Designed to run daily. Each run processes up to BATCH_LIMIT spaces
+ * (default 490 to stay within Yelp's 500 req/day free tier), always
+ * picking the least-recently-checked spaces first so the full dataset
+ * rotates evenly over time.
  *
- * Sources (any combination, based on available keys):
- *   1. Google Places Nearby Search  — requires GOOGLE_MAPS_API_KEY
- *   2. Yelp Fusion Business Search  — requires YELP_API_KEY
- *      Note: Yelp free tier is 500 req/day — use YELP_ENABLE=1 to opt in
- *   3. OpenStreetMap Overpass       — always runs, free, no key needed
+ * Only upgrades spaces to "occupied" — never downgrades.
+ * Stamps `yelp_checked_at` on every processed space so the next run
+ * picks up where this one left off.
+ *
+ * Sources (any combination, based on available env vars):
+ *   1. OpenStreetMap Overpass  — always runs, free, no key needed
+ *   2. Google Places Nearby    — requires GOOGLE_MAPS_API_KEY
+ *   3. Yelp Fusion Search      — requires YELP_API_KEY + YELP_ENABLE=1
  *
  * Run:
- *   DATABASE_URL="..." GOOGLE_MAPS_API_KEY="..." npx tsx scripts/enrich-occupancy-places.ts
- *
- * With Yelp:
- *   DATABASE_URL="..." GOOGLE_MAPS_API_KEY="..." YELP_API_KEY="..." YELP_ENABLE=1 npx tsx scripts/enrich-occupancy-places.ts
+ *   DATABASE_URL="..." GOOGLE_MAPS_API_KEY="..." YELP_API_KEY="..." YELP_ENABLE=1 \
+ *     npx tsx scripts/enrich-occupancy-places.ts
  *
  * Dry run (no DB writes):
- *   DRY_RUN=1 DATABASE_URL="..." GOOGLE_MAPS_API_KEY="..." npx tsx scripts/enrich-occupancy-places.ts
+ *   DRY_RUN=1 DATABASE_URL="..." ... npx tsx scripts/enrich-occupancy-places.ts
+ *
+ * Limit batch size:
+ *   BATCH_LIMIT=100 DATABASE_URL="..." ... npx tsx scripts/enrich-occupancy-places.ts
  */
 
 import { PrismaClient } from "@prisma/client";
@@ -28,14 +34,14 @@ const GOOGLE_KEY = process.env.GOOGLE_MAPS_API_KEY ?? "";
 const YELP_KEY = process.env.YELP_API_KEY ?? "";
 const YELP_ENABLE = process.env.YELP_ENABLE === "1";
 
+// Max spaces to process this run — default 490 to stay under Yelp's 500/day cap
+const BATCH_LIMIT = parseInt(process.env.BATCH_LIMIT ?? "490", 10);
+
 // How close (meters) a business must be to count as occupying the space
 const MATCH_RADIUS_M = 40;
 
-// Concurrent API calls per batch (Google allows 10 req/s on free tier)
+// Concurrent API calls per mini-batch (Google allows ~10 req/s on free tier)
 const CONCURRENCY = 8;
-
-// Yelp free tier cap (500 req/day) — stop after this many Yelp calls
-const YELP_MAX = parseInt(process.env.YELP_MAX ?? "490", 10);
 
 // Portland bounding box for OSM fallback
 const BBOX = "45.43,-122.84,45.65,-122.47";
@@ -123,7 +129,7 @@ async function checkYelp(lat: number, lng: number): Promise<YelpBusiness | null>
   return { name: biz.name, location: biz.location };
 }
 
-// ── OpenStreetMap Overpass (fallback, free) ───────────────────────────────────
+// ── OpenStreetMap Overpass (bulk fetch, free) ─────────────────────────────────
 
 type OsmPoint = { lat: number; lng: number };
 
@@ -145,42 +151,46 @@ out center;
   `.trim();
 
   console.log("  Fetching OSM businesses (Overpass API)...");
-  const res = await fetch("https://overpass.openstreetmap.fr/api/interpreter", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `data=${encodeURIComponent(query)}`,
-    signal: AbortSignal.timeout(120_000),
-  });
+  try {
+    const res = await fetch("https://overpass.openstreetmap.fr/api/interpreter", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`,
+      signal: AbortSignal.timeout(120_000),
+    });
 
-  if (!res.ok) {
-    console.warn(`  Overpass API returned ${res.status} — skipping OSM check`);
+    if (!res.ok) {
+      console.warn(`  Overpass API returned ${res.status} — skipping OSM check`);
+      return [];
+    }
+
+    type OverpassResponse = {
+      elements: Array<{
+        type: string;
+        lat?: number;
+        lon?: number;
+        center?: { lat: number; lon: number };
+      }>;
+    };
+
+    const json = (await res.json()) as OverpassResponse;
+    const points: OsmPoint[] = [];
+    for (const el of json.elements) {
+      if (el.type === "node" && el.lat !== undefined && el.lon !== undefined) {
+        points.push({ lat: el.lat, lng: el.lon });
+      } else if (el.type === "way" && el.center) {
+        points.push({ lat: el.center.lat, lng: el.center.lon });
+      }
+    }
+    console.log(`  ✓ ${points.length.toLocaleString()} OSM business points`);
+    return points;
+  } catch {
+    console.warn("  Overpass API unreachable — skipping OSM check");
     return [];
   }
-
-  type OverpassResponse = {
-    elements: Array<{
-      type: string;
-      lat?: number;
-      lon?: number;
-      center?: { lat: number; lon: number };
-    }>;
-  };
-
-  const json = (await res.json()) as OverpassResponse;
-  const points: OsmPoint[] = [];
-  for (const el of json.elements) {
-    if (el.type === "node" && el.lat !== undefined && el.lon !== undefined) {
-      points.push({ lat: el.lat, lng: el.lon });
-    } else if (el.type === "way" && el.center) {
-      points.push({ lat: el.center.lat, lng: el.center.lon });
-    }
-  }
-  console.log(`  ✓ ${points.length.toLocaleString()} OSM business points`);
-  return points;
 }
 
 function checkOsm(points: OsmPoint[], lat: number, lng: number): boolean {
-  // Simple linear scan — fine for per-space lookup after bulk fetch
   for (const p of points) {
     if (haversine(lat, lng, p.lat, p.lng) <= MATCH_RADIUS_M) return true;
   }
@@ -191,35 +201,52 @@ function checkOsm(points: OsmPoint[], lat: number, lng: number): boolean {
 
 async function main() {
   console.log(`\n🔍 Cross-reference enrichment${DRY_RUN ? " (DRY RUN)" : ""}`);
-  console.log(`   Match radius: ${MATCH_RADIUS_M}m`);
-  console.log(`   Google Places: ${GOOGLE_KEY ? "✓ enabled" : "✗ no key (set GOOGLE_MAPS_API_KEY)"}`);
-  console.log(`   Yelp Fusion:   ${YELP_KEY && YELP_ENABLE ? "✓ enabled" : YELP_KEY ? "⚠ key set but YELP_ENABLE=1 not set" : "✗ no key (set YELP_API_KEY + YELP_ENABLE=1)"}`);
+  console.log(`   Match radius:  ${MATCH_RADIUS_M}m`);
+  console.log(`   Batch limit:   ${BATCH_LIMIT} spaces`);
+  console.log(`   Google Places: ${GOOGLE_KEY ? "✓ enabled" : "✗ no key"}`);
+  console.log(`   Yelp Fusion:   ${YELP_KEY && YELP_ENABLE ? "✓ enabled" : YELP_KEY ? "⚠ key set but YELP_ENABLE=1 not set" : "✗ disabled"}`);
   console.log(`   OSM Overpass:  ✓ always enabled\n`);
 
-  if (!GOOGLE_KEY) {
-    console.warn("⚠  No GOOGLE_MAPS_API_KEY — results will rely on OSM only (same as existing script).");
-    console.warn("   Set GOOGLE_MAPS_API_KEY for much better coverage.\n");
-  }
-
-  // Load only likely_vacant spaces — we never downgrade occupied → vacant
-  const spaces = await prisma.space.findMany({
+  // Count total likely_vacant spaces for context
+  const totalVacant = await prisma.space.count({
     where: { status: "active", occupancyStatus: "likely_vacant" },
-    select: { id: true, lat: true, lng: true, address: true, neighborhood: true },
-    orderBy: { address: "asc" },
   });
 
-  console.log(`Found ${spaces.length.toLocaleString()} "likely_vacant" spaces to check\n`);
+  // Load the least-recently-checked likely_vacant spaces first (NULLS FIRST = never checked)
+  // This ensures even rotation — each daily run picks up where the last left off.
+  const spaces = await prisma.space.findMany({
+    where: { status: "active", occupancyStatus: "likely_vacant" },
+    select: { id: true, lat: true, lng: true, address: true, neighborhood: true, yelpCheckedAt: true },
+    orderBy: { yelpCheckedAt: "asc" },
+    take: BATCH_LIMIT,
+  });
+
+  const neverChecked = spaces.filter((s) => s.yelpCheckedAt === null).length;
+  const oldestDate = spaces.find((s) => s.yelpCheckedAt !== null)?.yelpCheckedAt;
+
+  console.log(`Total "likely_vacant" spaces: ${totalVacant.toLocaleString()}`);
+  console.log(`This batch:  ${spaces.length.toLocaleString()} spaces`);
+  console.log(`  • Never checked:   ${neverChecked}`);
+  if (oldestDate) {
+    console.log(`  • Oldest checked:  ${oldestDate.toISOString().slice(0, 10)}`);
+  }
+  if (totalVacant > BATCH_LIMIT) {
+    const daysRemaining = Math.ceil(totalVacant / BATCH_LIMIT);
+    console.log(`  • Full cycle time: ~${daysRemaining} days at ${BATCH_LIMIT}/day\n`);
+  } else {
+    console.log(`  • Full dataset fits in one run\n`);
+  }
 
   if (spaces.length === 0) {
     console.log("Nothing to do.");
     return;
   }
 
-  // Pre-fetch OSM data (one bulk request, much faster than per-space queries)
+  // Pre-fetch OSM data (one bulk request covers all spaces)
   const osmPoints = await fetchOsmBusinesses();
 
-  // Process spaces in concurrent batches
   const toMarkOccupied: Array<{ id: string; address: string; source: string; bizName: string }> = [];
+  const checkedIds: string[] = [];
   let googleChecked = 0;
   let yelpChecked = 0;
   let errorCount = 0;
@@ -232,42 +259,43 @@ async function main() {
       let foundBy: string | null = null;
       let bizName = "";
 
-      // 1. OSM check (instant — in-memory)
+      // 1. OSM check (in-memory, instant)
       if (checkOsm(osmPoints, space.lat, space.lng)) {
         foundBy = "OSM";
         bizName = "(OSM match)";
       }
 
-      // 2. Google Places (if not already found)
+      // 2. Google Places
       if (!foundBy && GOOGLE_KEY) {
         try {
           const hit = await checkGooglePlaces(space.lat, space.lng);
           googleChecked++;
           if (hit) { foundBy = "Google Places"; bizName = hit.name; }
-        } catch (e) {
+        } catch {
           errorCount++;
         }
       }
 
-      // 3. Yelp (if not already found, enabled, and under daily cap)
-      if (!foundBy && YELP_KEY && YELP_ENABLE && yelpChecked < YELP_MAX) {
+      // 3. Yelp
+      if (!foundBy && YELP_KEY && YELP_ENABLE && yelpChecked < BATCH_LIMIT) {
         try {
           const hit = await checkYelp(space.lat, space.lng);
           yelpChecked++;
           if (hit) { foundBy = "Yelp"; bizName = hit.name; }
-        } catch (e) {
+        } catch {
           errorCount++;
         }
       }
 
       processed++;
+      checkedIds.push(space.id);
+
       if (foundBy) {
         console.log(`  OCCUPIED  ${space.address} — "${bizName}" (via ${foundBy})`);
         toMarkOccupied.push({ id: space.id, address: space.address, source: foundBy, bizName });
       }
     }));
 
-    // Brief pause between batches to stay under rate limits (~8 req/s for Google)
     if (batchStart + CONCURRENCY < spaces.length) await sleep(100);
 
     process.stdout.write(`\r  Progress: ${processed}/${spaces.length} (${toMarkOccupied.length} occupied)   `);
@@ -275,16 +303,11 @@ async function main() {
 
   console.log(`\n\n── Results ─────────────────────────────────────────────────────`);
   console.log(`  Spaces checked:         ${spaces.length.toLocaleString()}`);
-  console.log(`  Google queries made:    ${googleChecked.toLocaleString()}`);
-  console.log(`  Yelp queries made:      ${yelpChecked.toLocaleString()}`);
+  console.log(`  Google queries:         ${googleChecked.toLocaleString()}`);
+  console.log(`  Yelp queries:           ${yelpChecked.toLocaleString()}`);
   console.log(`  API errors:             ${errorCount.toLocaleString()}`);
   console.log(`  Found occupied:         ${toMarkOccupied.length.toLocaleString()}`);
-  console.log(`  Remaining likely_vacant: ${(spaces.length - toMarkOccupied.length).toLocaleString()}`);
-
-  if (toMarkOccupied.length === 0) {
-    console.log("\nNo new occupied spaces found — database unchanged.");
-    return;
-  }
+  console.log(`  Remaining likely_vacant: ${(totalVacant - toMarkOccupied.length).toLocaleString()}`);
 
   if (DRY_RUN) {
     console.log("\n🚫 Dry run — no DB writes. Spaces that would be marked occupied:");
@@ -294,23 +317,39 @@ async function main() {
     return;
   }
 
-  // Write updates in batches of 100
-  console.log(`\nWriting ${toMarkOccupied.length} updates to DB...`);
-  const BATCH = 100;
-  for (let i = 0; i < toMarkOccupied.length; i += BATCH) {
-    const batch = toMarkOccupied.slice(i, i + BATCH);
-    await prisma.$transaction(
-      batch.map((u) =>
-        prisma.space.update({
-          where: { id: u.id },
-          data: { occupancyStatus: "occupied" },
-        })
-      )
-    );
-    process.stdout.write(`\r  ${Math.min(i + BATCH, toMarkOccupied.length)} / ${toMarkOccupied.length}`);
+  const now = new Date();
+  const WRITE_BATCH = 100;
+
+  // Stamp yelpCheckedAt on all processed spaces (even those not found occupied)
+  // This ensures next run picks up fresh spaces instead of re-checking these.
+  console.log(`\nStamping ${checkedIds.length} spaces with yelpCheckedAt = now...`);
+  for (let i = 0; i < checkedIds.length; i += WRITE_BATCH) {
+    const ids = checkedIds.slice(i, i + WRITE_BATCH);
+    await prisma.space.updateMany({
+      where: { id: { in: ids } },
+      data: { yelpCheckedAt: now },
+    });
+    process.stdout.write(`\r  ${Math.min(i + WRITE_BATCH, checkedIds.length)} / ${checkedIds.length}`);
   }
 
-  console.log(`\n\n✅ Done — ${toMarkOccupied.length} spaces updated from "likely_vacant" → "occupied"`);
+  // Mark occupied spaces
+  if (toMarkOccupied.length > 0) {
+    console.log(`\nMarking ${toMarkOccupied.length} spaces as "occupied"...`);
+    for (let i = 0; i < toMarkOccupied.length; i += WRITE_BATCH) {
+      const batch = toMarkOccupied.slice(i, i + WRITE_BATCH);
+      await prisma.$transaction(
+        batch.map((u) =>
+          prisma.space.update({
+            where: { id: u.id },
+            data: { occupancyStatus: "occupied" },
+          })
+        )
+      );
+      process.stdout.write(`\r  ${Math.min(i + WRITE_BATCH, toMarkOccupied.length)} / ${toMarkOccupied.length}`);
+    }
+  }
+
+  console.log(`\n\n✅ Done — ${toMarkOccupied.length} spaces upgraded to "occupied", ${checkedIds.length} stamps written`);
 }
 
 main()
