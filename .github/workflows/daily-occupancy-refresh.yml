@@ -1,15 +1,21 @@
-name: Daily Occupancy Refresh
+name: Occupancy Refresh (Yelp + OSM, free)
 
 on:
-  schedule:
-    # Runs daily at 6am UTC (10pm PT / 11pm MT)
-    - cron: '0 6 * * *'
+  # Schedule disabled — trigger manually until ready for production.
+  # To re-enable, uncomment and set desired frequency:
+  # schedule:
+  #   - cron: '0 6 * * 0'   # weekly on Sunday
+  #   - cron: '0 6 * * *'   # daily
   workflow_dispatch:
     inputs:
       batch_limit:
         description: 'Max spaces to check (default 490, Yelp free tier cap)'
         type: number
         default: 490
+      use_google:
+        description: 'Use Google Places API (costs $0.032/call — leave off unless needed)'
+        type: boolean
+        default: false
       dry_run:
         description: 'Dry run — show what would change without writing to DB'
         type: boolean
@@ -42,7 +48,7 @@ jobs:
       - name: Run occupancy enrichment
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ inputs.use_google && secrets.GOOGLE_MAPS_API_KEY || '' }}
           YELP_API_KEY: ${{ secrets.YELP_API_KEY }}
           YELP_ENABLE: '1'
           BATCH_LIMIT: ${{ inputs.batch_limit || 490 }}
