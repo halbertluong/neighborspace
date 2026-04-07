@@ -1,20 +1,17 @@
-name: Occupancy Refresh (Yelp + OSM, free)
+name: Occupancy Refresh
 
 on:
   schedule:
-    # Runs on the 1st of each month at 6am UTC
-    - cron: '0 6 1 * *'
-  # To change frequency, update the cron above:
-  #   - cron: '0 6 * * 0'   # weekly on Sunday
-  #   - cron: '0 6 * * *'   # daily
+    - cron: '0 6 * * *'    # Daily at 6am UTC — Yelp only (free, 490/day)
+    - cron: '0 6 1 * *'    # Monthly on the 1st — adds Google Places (~$15/mo)
   workflow_dispatch:
     inputs:
       batch_limit:
-        description: 'Max spaces to check (default 490, Yelp free tier cap)'
+        description: 'Max spaces to check (default 490)'
         type: number
         default: 490
       use_google:
-        description: 'Use Google Places API (costs $0.032/call — leave off unless needed)'
+        description: 'Use Google Places API (costs $0.032/call)'
         type: boolean
         default: false
       dry_run:
@@ -46,10 +43,20 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx prisma db push --accept-data-loss
 
+      - name: Determine if Google should run
+        id: google
+        run: |
+          # Use Google on the monthly cron or when manually enabled
+          if [[ "${{ github.event.schedule }}" == "0 6 1 * *" ]] || [[ "${{ inputs.use_google }}" == "true" ]]; then
+            echo "enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run occupancy enrichment
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GOOGLE_MAPS_API_KEY: ${{ inputs.use_google && secrets.GOOGLE_MAPS_API_KEY || '' }}
+          GOOGLE_MAPS_API_KEY: ${{ steps.google.outputs.enabled == 'true' && secrets.GOOGLE_MAPS_API_KEY || '' }}
           YELP_API_KEY: ${{ secrets.YELP_API_KEY }}
           YELP_ENABLE: '1'
           BATCH_LIMIT: ${{ inputs.batch_limit || 490 }}
