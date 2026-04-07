@@ -1,9 +1,10 @@
 name: Occupancy Refresh (Yelp + OSM, free)
 
 on:
-  # Schedule disabled — trigger manually until ready for production.
-  # To re-enable, uncomment and set desired frequency:
-  # schedule:
+  schedule:
+    # Runs on the 1st of each month at 6am UTC
+    - cron: '0 6 1 * *'
+  # To change frequency, update the cron above:
   #   - cron: '0 6 * * 0'   # weekly on Sunday
   #   - cron: '0 6 * * *'   # daily
   workflow_dispatch:
